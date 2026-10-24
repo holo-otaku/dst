@@ -40,7 +40,7 @@ services:
     networks:
       - dst_network
     ports:
-      - 5278:80
+      - 127.0.0.1:5278:80  # 只綁本機，用 SSH tunnel 連線
     environment:
       PMA_HOST: database
       PMA_PORT: 3306
