@@ -4,13 +4,15 @@
 資料由 dst-backend 的 `scripts/mysql_to_postgres.py` 搬移：它只接受 alembic 版本 `13fdcde5ad3f` 的 MySQL 和空的 PostgreSQL，
 搬完會比對每張表的筆數，不一致就中止，MySQL 不會被修改。
 
-以下指令都在主機的 `/home/user/dst` 執行。
+以下指令都在主機的 `/home/user/dst` 執行。2026-11-23 已在本機用同一份 compose 與指令完整演練過
+（搬移、驗證、回退、清空 PostgreSQL 後重跑）。
 
 ## 事前準備（不用停機）
 
 1. dst-backend #95、dst-frontend #225 合併並推到各自的 `release` branch，確認 GitHub Actions 已經建好新的 `:release` image。
-2. 更新這個 repo：`git pull`（拿到含 `postgres` 服務的 `docker-compose.yml`）。
-3. 在 `.env` 加上 PostgreSQL 設定，**先不要改** `SQLALCHEMY_DATABASE_URI`：
+2. 在 `.env` 加上 PostgreSQL 設定，**先不要改** `SQLALCHEMY_DATABASE_URI`。
+   這一步一定要在 `git pull` 之前：新的 compose 讓 backend 等 `postgres` 健康才啟動，
+   沒有 `POSTGRES_PASSWORD` 時 postgres 起不來，任何 `docker compose up` 都會讓後端停擺。
 
    ```bash
    cat >> .env <<EOF
@@ -22,6 +24,7 @@
    EOF
    ```
 
+3. 更新這個 repo：`git pull`（拿到含 `postgres` 服務的 `docker-compose.yml`）。
 4. 把目前的 image 另外標記，回退時要用（一定要在 pull 之前做）：
 
    ```bash
@@ -64,12 +67,12 @@
      python -m scripts.mysql_to_postgres'
    ```
 
-   最後一行要是「完成，alembic 版本 5b8e2d4f9a13」。2026-11-23 檢查線上資料時，預期會略過的孤兒資料：
-   - `archive` 1 筆（指向已不存在的 item）
-   - `activity_log` 78 筆（使用者已被刪除）
+   最後一行要是「完成，alembic 版本 5b8e2d4f9a13」。2026-11-23 檢查線上資料時，預期只會略過
+   `archive` 1 筆（指向已不存在的 item）。使用者已被刪除的 78 筆 `activity_log` 會照樣複製，不算略過。
 
-   失敗時不要繼續，MySQL 沒有被動到，看「回退」。若要重跑，先清空 PostgreSQL：
-   `docker compose down postgres && docker volume rm dst_pg_data`。
+   失敗時不要繼續，MySQL 沒有被動到，看「回退」。要重跑時先清空 PostgreSQL 再回到第 3 步
+   （只能在第 5 步改 `.env` 之前重跑，因為 `MYSQL_URI` 取自目前的 `SQLALCHEMY_DATABASE_URI`）：
+   `docker compose down postgres && docker volume rm dst_pg_data`
 
 5. 把 `.env` 的 `SQLALCHEMY_DATABASE_URI` 改成 PostgreSQL（舊的那行留著註解，回退用）：
 
@@ -101,9 +104,13 @@
 
 只要還沒清理，MySQL 的資料與升級前完全相同。**回退後，升級後在 PostgreSQL 上做的修改都會不見。**
 
+新版在換圖、刪圖時會刪掉舊的圖檔，而 MySQL 仍指向那些檔案，所以回退時**一定要還原圖片備份**，
+否則那些圖會回 500（演練時實測）。還原只會補回被刪的檔案，升級後新上傳的檔案留著不影響。
+
 ```bash
 docker compose stop backend web
 # .env：SQLALCHEMY_DATABASE_URI 改回原本的 mysql+pymysql://... 那行
+tar xzf backup/images-pre-pg-<時間>.tgz
 docker tag dst-backend:pre-pg ghcr.io/holo-otaku/dst-backend:release
 docker tag dst-frontend:pre-pg ghcr.io/holo-otaku/dst-frontend:release
 docker compose up -d backend web
