@@ -38,8 +38,28 @@
    bash init.sh
    ```
 
-4. 啟動專案
+4. 設定環境變數：複製 `.env.example` 為 `.env`，填入密碼與密鑰（`openssl rand -hex 24` 產生），
+   `SQLALCHEMY_DATABASE_URI` 指向 `postgres` 服務
+
+   ```bash
+   cp .env.example .env
+   ```
+
+5. 建立資料表與預設帳號（admin / admin，登入後請立刻改密碼）
+
+   ```bash
+   docker compose up -d postgres
+   docker compose run --rm backend flask --app app db upgrade
+   docker compose run --rm backend python -c 'from app import app; from controller.permission import create_default_permissions; from controller.role import create_admin_role; from controller.user import create_admin_user; app.app_context().push(); create_default_permissions(); create_admin_role(); create_admin_user()'
+   ```
+
+6. 啟動專案
 
    ```bash
    docker compose up -d
    ```
+
+## 升級
+
+- 從 MySQL 升級到 PostgreSQL：見 [docs/upgrade-to-postgres.md](docs/upgrade-to-postgres.md)
+- 之後有新的資料庫 migration 時：`docker compose run --rm backend flask --app app db upgrade`
